@@ -4,11 +4,8 @@
 // Libraries
 // ============================================================
 
-// Added by me
 #include <time.h>
 #include <stdbool.h>
-
-// Pre-existing
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
