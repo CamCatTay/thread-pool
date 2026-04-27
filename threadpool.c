@@ -1,9 +1,3 @@
-// threadpool - a concurrent work queue
-
-// ============================================================
-// Libraries
-// ============================================================
-
 #include <time.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -11,10 +5,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
-
-// ============================================================
-// Type Definitions
-// ============================================================
 
 typedef struct task_node {
     char task[1024];
@@ -26,15 +16,7 @@ typedef struct {
     int done;
 } task_queue_t;
 
-// ============================================================
-// Globals
-// ============================================================
-
 task_queue_t queue = { .head = NULL, .tail = NULL, .done = 0 };
-
-// ============================================================
-// Grader Helpers
-// ============================================================
 
 // Returns a integer given an input string deterministically
 unsigned long djb2_hash(const char *str) {
@@ -62,11 +44,6 @@ void process_task(const char *task) {
     fflush(stdout);
 }
 
-// ============================================================
-// Core
-// ============================================================
-
-// Returns thread count and performs a sanity check on user input
 int parse_thread_count(int argc, char **argv) {
     char *argc_usage_message = "Usage: echo -e 'hello\\nworld\\nfoo' | ./threadpool <num_of_threads>\n";
     char *argv_usage_message = "num_of_threads must be 1 or more";
@@ -101,31 +78,25 @@ int main(int argc, char *argv[]) {
     int thread_count = parse_thread_count(argc, argv);
     if (thread_count == -1) return EXIT_FAILURE;
 
-    // Buffer to hold user input
     char line[1024];
 
     while (true) {
 
-        // Get user input
         if  (fgets(line, sizeof(line), stdin) != NULL) {
-            // Finds newline char and sets it to null
             char *parse_newline = strchr(line, '\n');
             if (parse_newline) *parse_newline = '\0';
         }
         else {
-            // End of file
             printf("%s", "\n");
             break;
         }
 
-        // Check if string is empty; skip if it is
         if (strcmp(line, "") != 0) {
             process_task(line);
         } else {
             continue;
         }
 
-        // Create threads
         pthread_t threads[thread_count];
         int thread_ids[thread_count];
 
@@ -135,7 +106,6 @@ int main(int argc, char *argv[]) {
         }
 
         for (int i = 0; i < thread_count; ++i){
-            // Wait until thread finishes executing
             pthread_join(threads[i], NULL);
         }
 
