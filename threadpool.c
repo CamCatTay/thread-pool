@@ -73,6 +73,29 @@ void *worker(void *arg) {
     return NULL;
 }
 
+void push_task(task_queue_t *q, const char *task) {
+    task_node_t *node = malloc(sizeof(task_node_t));
+    strcpy(node->task, task);
+    node->next = NULL;
+    if (q->tail) {
+        q->tail->next = node;
+        q->tail = node;
+    } else {
+        q->head = node;
+        q->tail = node;
+    }
+}
+
+int pop_task(task_queue_t *q, char *buf) {
+    if (q->head == NULL) return 0;
+    task_node_t *node = q->head;
+    strcpy(buf, node->task);
+    q->head = node->next;
+    if (q->head == NULL) q->tail = NULL;
+    free(node);
+    return 1;
+}
+
 int main(int argc, char *argv[]) {
 
     int thread_count = parse_thread_count(argc, argv);
