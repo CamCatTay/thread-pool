@@ -109,6 +109,7 @@ void *worker(void *arg) {
     fflush(stdout);
     return NULL;
     */
+    return NULL;
 }
 
 void read_input_and_push(char *line, int size) {
