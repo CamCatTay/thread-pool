@@ -20,7 +20,6 @@ typedef struct {
 
 task_queue_t queue = { .head = NULL, .tail = NULL, .done = false };
 
-// Returns a integer given an input string deterministically
 unsigned long djb2_hash(const char *str) {
 unsigned long hash = 5381;
 int c;
@@ -31,8 +30,6 @@ while ((c = *str++))
 return hash;
 }
 
-// Takes in a string sleeps briefly to simulate meaningful work
-// then returns a hash
 void process_task(const char *task) {
 
     // Replaced deprecated usleep() with nanosleep()
@@ -46,17 +43,15 @@ void process_task(const char *task) {
     fflush(stdout);
 }
 
-int parse_arguments(int argc, char **argv) {
+size_t parse_arguments(int argc, char **argv) {
     char *argc_usage_message = "Usage: echo -e 'hello\\nworld\\nfoo' | ./threadpool <num_of_threads>\n";
     char *argv_usage_message = "num_of_threads must be 1 or more";
 
-    // Check if there are at least 2 arguments
     if (argc < 2) {
         fprintf(stderr, "%s", argc_usage_message);
         return -1;
     }
 
-    // Parse the thread count
     char *end;
     long thread_count = strtol(argv[1], &end, 10);
     if (*end != '\0' || thread_count < 1) {
@@ -90,14 +85,13 @@ int pop_task(task_queue_t *q, char *buf) {
     return true;
 }
 
-// Generic worker function
 void *worker(void *arg) {
     while (true) {
         char buffer[1024];
         pthread_mutex_lock(&queue.mutex);
 
         //A thread can "steal" the work before this thread wakes up so
-        //this appears as a spurious wakeup which is why there is a loop
+        //so check if there is actually any work again before continuing
         while (queue.head == NULL && !queue.done) {
             pthread_cond_wait(&queue.cond, &queue.mutex);
         }
@@ -120,7 +114,7 @@ void *worker(void *arg) {
     return NULL;
 }
 
-void read_input_and_push(char *line, int size) {
+void read_input_and_push_to_queue(char *line, int size) {
     while (true) {
         if  (fgets(line, size, stdin) != NULL) {
             char *parse_newline = strchr(line, '\n');
@@ -134,36 +128,51 @@ void read_input_and_push(char *line, int size) {
             printf("%s", "\n");
             pthread_mutex_lock(&queue.mutex);
             queue.done = true;
+            pthread_cond_broadcast(&queue.cond);
             pthread_mutex_unlock(&queue.mutex);
             break;
         }
     }
 }
 
-int main(int argc, char *argv[]) {
-
-    int thread_count = parse_arguments(argc, argv);
-    if (thread_count == -1) return EXIT_FAILURE;
-
+void initialize_sync_primitives() {
     pthread_mutex_init(&queue.mutex, NULL);
     pthread_cond_init(&queue.cond, NULL);
+}
 
-    pthread_t threads[thread_count];
-    int thread_ids[thread_count];
+void clean_up_sync_primitives() {
+    pthread_mutex_destroy(&queue.mutex);
+    pthread_cond_destroy(&queue.cond);
+}
 
+void join_threads(pthread_t *threads, size_t thread_count) {
+    for (int i = 0; i < thread_count; ++i){
+        pthread_join(threads[i], NULL);
+    }
+}
+
+void create_threads(pthread_t *threads, size_t thread_count) {
+    size_t thread_ids[thread_count];
     for (int i = 0; i < thread_count; ++i) {
         thread_ids[i] = i;
         pthread_create(&threads[i], NULL, worker, &thread_ids[i]);
     }
+}
 
+int main(int argc, char *argv[]) {
+
+    size_t thread_count = parse_arguments(argc, argv);
+    if (thread_count == -1) return EXIT_FAILURE;
+
+    pthread_t threads[thread_count];
     int line_size = 1024;
     char line[line_size];
 
-    read_input_and_push(line, line_size);
-
-    for (int i = 0; i < thread_count; ++i){
-        pthread_join(threads[i], NULL);
-    }
+    initialize_sync_primitives();
+    create_threads(threads, thread_count);
+    read_input_and_push_to_queue(line, line_size);
+    join_threads(threads, thread_count);
+    clean_up_sync_primitives();
 
     return EXIT_SUCCESS;
 }
