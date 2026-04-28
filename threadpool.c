@@ -15,6 +15,7 @@ typedef struct {
     task_node_t *tail;
     int done;
     pthread_mutex_t mutex;
+    pthread_cond_t cond;
 } task_queue_t;
 
 task_queue_t queue = { .head = NULL, .tail = NULL, .done = false };
@@ -94,19 +95,26 @@ void *worker(void *arg) {
     while (true) {
         char buffer[1024];
         pthread_mutex_lock(&queue.mutex);
-        bool result = pop_task(&queue, buffer);
+        bool is_result = pop_task(&queue, buffer);
         pthread_mutex_unlock(&queue.mutex);
-        if (result) {
+        if (is_result) {
             process_task(buffer);
+        }
+        else if (!queue.done) {
+            //A thread can "steal" the work before this thread wakes up so
+            //this appears as a spurious wakeup which is why there is a loop
+            while (queue.head == NULL && !queue.done) {
+                //pthread_cond_wait(&queue.cond, &queue.mutex);
+            }
         }
         else if (queue.done) {
             break;
         }
+
     }
     /* OLD
     int id = *(int *)arg;
     printf("Worker %d ready\n", id);
-    fflush(stdout);
     return NULL;
     */
     return NULL;
@@ -119,6 +127,7 @@ void read_input_and_push(char *line, int size) {
             if (parse_newline) *parse_newline = '\0';
             pthread_mutex_lock(&queue.mutex);
             push_task(&queue, line);
+            pthread_cond_signal(&queue.cond);
             pthread_mutex_unlock(&queue.mutex);
         }
         else {
@@ -137,6 +146,7 @@ int main(int argc, char *argv[]) {
     if (thread_count == -1) return EXIT_FAILURE;
 
     pthread_mutex_init(&queue.mutex, NULL);
+    pthread_cond_init(&queue.cond, NULL);
 
     pthread_t threads[thread_count];
     int thread_ids[thread_count];
