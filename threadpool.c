@@ -14,9 +14,10 @@ typedef struct {
     task_node_t *head;
     task_node_t *tail;
     int done;
+    pthread_mutex_t mutex;
 } task_queue_t;
 
-task_queue_t queue = { .head = NULL, .tail = NULL, .done = 0 };
+task_queue_t queue = { .head = NULL, .tail = NULL, .done = false };
 
 // Returns a integer given an input string deterministically
 unsigned long djb2_hash(const char *str) {
@@ -44,7 +45,7 @@ void process_task(const char *task) {
     fflush(stdout);
 }
 
-int parse_thread_count(int argc, char **argv) {
+int parse_arguments(int argc, char **argv) {
     char *argc_usage_message = "Usage: echo -e 'hello\\nworld\\nfoo' | ./threadpool <num_of_threads>\n";
     char *argv_usage_message = "num_of_threads must be 1 or more";
 
@@ -65,14 +66,6 @@ int parse_thread_count(int argc, char **argv) {
     return (int)thread_count;
 }
 
-// Generic worker function
-void *worker(void *arg) {
-    int id = *(int *)arg;
-    printf("Worker %d ready\n", id);
-    fflush(stdout);
-    return NULL;
-}
-
 void push_task(task_queue_t *q, const char *task) {
     task_node_t *node = malloc(sizeof(task_node_t));
     strcpy(node->task, task);
@@ -87,53 +80,86 @@ void push_task(task_queue_t *q, const char *task) {
 }
 
 int pop_task(task_queue_t *q, char *buf) {
-    if (q->head == NULL) return 0;
+    if (q->head == NULL) return false;
     task_node_t *node = q->head;
     strcpy(buf, node->task);
     q->head = node->next;
     if (q->head == NULL) q->tail = NULL;
     free(node);
-    return 1;
+    return true;
+}
+
+// Generic worker function
+void *worker(void *arg) {
+    while (true) {
+        char buffer[1024];
+        pthread_mutex_lock(&queue.mutex);
+        bool result = pop_task(&queue, buffer);
+        pthread_mutex_unlock(&queue.mutex);
+        if (result) {
+            process_task(buffer);
+        }
+        else if (queue.done) {
+            break;
+        }
+    }
+    /* OLD
+    int id = *(int *)arg;
+    printf("Worker %d ready\n", id);
+    fflush(stdout);
+    return NULL;
+    */
+}
+
+void read_input_and_push(char *line, int size) {
+    while (true) {
+        if  (fgets(line, size, stdin) != NULL) {
+            char *parse_newline = strchr(line, '\n');
+            if (parse_newline) *parse_newline = '\0';
+            pthread_mutex_lock(&queue.mutex);
+            push_task(&queue, line);
+            pthread_mutex_unlock(&queue.mutex);
+        }
+        else {
+            printf("%s", "\n");
+            pthread_mutex_lock(&queue.mutex);
+            queue.done = true;
+            pthread_mutex_unlock(&queue.mutex);
+            break;
+        }
+    }
 }
 
 int main(int argc, char *argv[]) {
 
-    int thread_count = parse_thread_count(argc, argv);
+    int thread_count = parse_arguments(argc, argv);
     if (thread_count == -1) return EXIT_FAILURE;
 
-    char line[1024];
+    pthread_mutex_init(&queue.mutex, NULL);
 
-    while (true) {
+    pthread_t threads[thread_count];
+    int thread_ids[thread_count];
 
-        if  (fgets(line, sizeof(line), stdin) != NULL) {
-            char *parse_newline = strchr(line, '\n');
-            if (parse_newline) *parse_newline = '\0';
-        }
-        else {
-            printf("%s", "\n");
-            break;
-        }
+    for (int i = 0; i < thread_count; ++i) {
+        thread_ids[i] = i;
+        pthread_create(&threads[i], NULL, worker, &thread_ids[i]);
+    }
 
+    int line_size = 1024;
+    char line[line_size];
+
+    read_input_and_push(line, line_size);
+
+        /* OLD
         if (strcmp(line, "") != 0) {
             process_task(line);
         } else {
             continue;
         }
+        */
 
-        pthread_t threads[thread_count];
-        int thread_ids[thread_count];
-
-        for (int i = 0; i < thread_count; ++i) {
-            thread_ids[i] = i;
-            pthread_create(&threads[i], NULL, worker, &thread_ids[i]);
-        }
-
-        for (int i = 0; i < thread_count; ++i){
-            pthread_join(threads[i], NULL);
-        }
-
-
-
+    for (int i = 0; i < thread_count; ++i){
+        pthread_join(threads[i], NULL);
     }
 
     return EXIT_SUCCESS;
