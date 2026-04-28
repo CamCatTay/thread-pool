@@ -95,28 +95,28 @@ void *worker(void *arg) {
     while (true) {
         char buffer[1024];
         pthread_mutex_lock(&queue.mutex);
-        bool is_result = pop_task(&queue, buffer);
-        pthread_mutex_unlock(&queue.mutex);
-        if (is_result) {
-            process_task(buffer);
+
+        //A thread can "steal" the work before this thread wakes up so
+        //this appears as a spurious wakeup which is why there is a loop
+        while (queue.head == NULL && !queue.done) {
+            pthread_cond_wait(&queue.cond, &queue.mutex);
         }
-        else if (!queue.done) {
-            //A thread can "steal" the work before this thread wakes up so
-            //this appears as a spurious wakeup which is why there is a loop
-            while (queue.head == NULL && !queue.done) {
-                //pthread_cond_wait(&queue.cond, &queue.mutex);
-            }
-        }
-        else if (queue.done) {
+
+        if (queue.head == NULL && queue.done) {
+            pthread_mutex_unlock(&queue.mutex);
             break;
         }
 
+
+        bool is_result = pop_task(&queue, buffer);
+        pthread_mutex_unlock(&queue.mutex);
+
+        if (is_result) {
+            process_task(buffer);
+        }
+
     }
-    /* OLD
-    int id = *(int *)arg;
-    printf("Worker %d ready\n", id);
-    return NULL;
-    */
+
     return NULL;
 }
 
@@ -160,14 +160,6 @@ int main(int argc, char *argv[]) {
     char line[line_size];
 
     read_input_and_push(line, line_size);
-
-        /* OLD
-        if (strcmp(line, "") != 0) {
-            process_task(line);
-        } else {
-            continue;
-        }
-        */
 
     for (int i = 0; i < thread_count; ++i){
         pthread_join(threads[i], NULL);
